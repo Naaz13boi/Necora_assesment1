@@ -95,6 +95,25 @@ The AI brain of the application is powered by **Llama.cpp**.
 
 ---
 
+## 🔍 Key Features
+
+### Updater Graph (Dependency Impact Analysis)
+When working in a large codebase, it's incredibly common to change a core function (like `database.py:save_user`) and unknowingly break downstream dependencies (like an auth module). 
+The **Updater Graph** solves this by providing a dedicated view of **reverse dependencies**. By selecting a node, the graph instantly transitions to show exactly which files, classes, and functions depend on your selection up to 3 levels deep. This ensures you know exactly where else you need to update code, significantly reducing regressions and debugging time.
+
+### Searchable Node Selector
+With codebases containing hundreds or thousands of nodes, scrolling through a standard dropdown is unmanageable. The dashboard features a sleek, searchable input dropdown. Simply start typing the name of the file or function you are about to edit, and instantly jump to its Impact Analysis view.
+
+### Contextual Impact Analysis (Colors & RAG Writeup)
+To make the Updater Graph instantly understandable for beginners, it includes:
+- **Distance Color-Coding (Visual Context):** Nodes are color-coded based on their risk level (distance from the target). The Target Node is distinctively highlighted in **Red**, direct dependents (Level 1) are **Orange** (high risk), secondary dependents (Level 2) are **Yellow**, and deeper dependencies are **Green**.
+
+![Impact Risk Levels](assests/risklevels.png)
+
+- **Auto-RAG Writeup (AI Context):** The moment you select a node, the frontend extracts the graph context and silently prompts the Graph RAG AI. A plain-English explanation automatically streams into the chat sidebar, explaining exactly *why* the downstream nodes will break if you modify the target node!
+
+---
+
 ## 💡 General Usefulness
 
 For modern software teams, Necora Graph RAG provides unparalleled value:

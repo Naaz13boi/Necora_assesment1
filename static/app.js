@@ -14,6 +14,7 @@ const COLORS = {
 document.addEventListener("DOMContentLoaded", () => {
     initGraph();
     reloadGraph();
+    populateNodeDropdown();
 });
 
 // Initialize Vis.js Network Graph
@@ -146,14 +147,155 @@ function stabilizeGraph() {
     network.stabilize();
 }
 
+async function populateNodeDropdown() {
+    try {
+        const response = await fetch("/api/nodes");
+        if (!response.ok) throw new Error("Failed to load nodes list");
+        const data = await response.json();
+        
+        window.allNodes = data.nodes;
+        const datalist = document.getElementById("nodes-list");
+        datalist.innerHTML = "";
+        
+        data.nodes.forEach(node => {
+            const option = document.createElement("option");
+            option.value = node.display;
+            datalist.appendChild(option);
+        });
+    } catch (e) {
+        console.error("Error populating dropdown:", e);
+    }
+}
+
+async function loadUpdaterGraph() {
+    const selector = document.getElementById("node-selector");
+    const displayValue = selector.value;
+    
+    let nodeId = "";
+    if (window.allNodes && displayValue) {
+        const matchedNode = window.allNodes.find(n => n.display === displayValue);
+        if (matchedNode) {
+            nodeId = matchedNode.id;
+        }
+    }
+    
+    const backBtn = document.getElementById("btn-back-main");
+    
+    if (!nodeId) {
+        goBackToMain();
+        return;
+    }
+    
+    backBtn.style.display = "flex";
+    
+    try {
+        const response = await fetch(`/api/updater-graph?node_id=${encodeURIComponent(nodeId)}`);
+        if (!response.ok) {
+            if (response.status === 404) {
+                alert("Target node not found in the database.");
+            } else {
+                throw new Error("Failed to load impact graph data");
+            }
+            return;
+        }
+        const data = await response.json();
+
+        // Compute Distances (BFS from target node backwards along edges)
+        const distances = {};
+        distances[nodeId] = 0;
+        let queue = [nodeId];
+        while (queue.length > 0) {
+            let current = queue.shift();
+            let currentDist = distances[current];
+            let incomingEdges = data.edges.filter(e => e.to === current);
+            for (let edge of incomingEdges) {
+                let dependentId = edge.from;
+                if (distances[dependentId] === undefined) {
+                    distances[dependentId] = currentDist + 1;
+                    queue.push(dependentId);
+                }
+            }
+        }
+
+        // Apply Color Coding
+        data.nodes = data.nodes.map(n => {
+            let d = distances[n.id];
+            
+            if (d === 0) {
+                n.color = { background: '#ef4444', border: '#b91c1c' }; // Red Target
+                n.font = { size: 18, bold: true };
+                n.borderWidth = 3;
+            } else if (d === 1) {
+                n.color = { background: '#f97316', border: '#c2410c' }; // Orange L1
+            } else if (d === 2) {
+                n.color = { background: '#eab308', border: '#a16207' }; // Yellow L2
+            } else if (d >= 3) {
+                n.color = { background: '#84cc16', border: '#4d7c0f' }; // Lime L3+
+            }
+            return n;
+        });
+
+        // Toggle legends
+        document.getElementById("main-legend").style.display = "none";
+        document.getElementById("impact-legend").style.display = "flex";
+
+        // Update dataset
+        nodesDataset.clear();
+        edgesDataset.clear();
+
+        nodesDataset.add(data.nodes);
+        edgesDataset.add(data.edges);
+
+        network.setOptions({ physics: { enabled: true } });
+        network.stabilize();
+        console.log(`[Impact Graph] Loaded ${data.nodes.length} nodes, ${data.edges.length} edges.`);
+        
+        // Auto-Trigger RAG Explanation
+        const dependentNames = data.nodes.filter(n => distances[n.id] > 0).map(n => n.label);
+        const targetName = data.nodes.find(n => n.id === nodeId)?.label || nodeId;
+        
+        let prompt = "";
+        if (dependentNames.length > 0) {
+            const depsString = dependentNames.join(", ");
+            prompt = `Explain the impact of modifying '${targetName}' which affects downstream components like ${depsString}. Explain it simply for a beginner, focusing on the blast radius. Explicitly mention that direct dependents are highlighted in Orange (High Risk) and secondary dependents are Yellow (Medium Risk) to help them understand the graph colors.`;
+        } else {
+            prompt = `I selected '${targetName}' for impact analysis, but it has no downstream dependencies in the graph. Explain what this means simply.`;
+        }
+        
+        const input = document.getElementById("chat-input");
+        input.value = prompt;
+        sendMessage(true);
+
+    } catch (e) {
+        console.error("Error reloading impact graph:", e);
+    }
+}
+
+function goBackToMain() {
+    const selector = document.getElementById("node-selector");
+    selector.value = "";
+    document.getElementById("btn-back-main").style.display = "none";
+    
+    // Toggle legends back
+    document.getElementById("impact-legend").style.display = "none";
+    document.getElementById("main-legend").style.display = "flex";
+    
+    reloadGraph();
+}
+
 // Handle Chat Message Sending
-async function sendMessage() {
+async function sendMessage(hidden = false) {
     const input = document.getElementById("chat-input");
-    const text = input.value.trim();
+    let text = input.value.trim();
     if (!text) return;
 
     input.value = "";
-    appendMessage("user", text);
+    if (hidden !== true) {
+        appendMessage("user", text);
+    } else {
+        // Just clear it but don't append user message
+        text = text; 
+    }
 
     // Create assistant message container for streaming
     const msgId = appendMessage("assistant", "Thinking...");

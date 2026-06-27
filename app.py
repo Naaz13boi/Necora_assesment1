@@ -135,6 +135,130 @@ async def get_graph():
         return {"nodes": list(nodes_map.values()), "edges": edges}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/nodes")
+async def get_nodes():
+    if not driver:
+        raise HTTPException(status_code=500, detail="Memgraph driver not initialized")
+    
+    nodes = []
+    query = "MATCH (n) RETURN n"
+    
+    try:
+        with driver.session() as session:
+            result = session.run(query)
+            for record in result:
+                n = record["n"]
+                if n.get("file_path") == "external":
+                    continue
+                n_id = make_node_id(n)
+                n_label = list(n.labels)[0] if n.labels else "Unknown"
+                
+                display_name = f"{n_label}: {get_node_label(n)}"
+                
+                nodes.append({
+                    "id": n_id,
+                    "display": display_name
+                })
+        nodes.sort(key=lambda x: x["display"])
+        return {"nodes": nodes}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/updater-graph")
+async def get_updater_graph(node_id: str):
+    if not driver:
+        raise HTTPException(status_code=500, detail="Memgraph driver not initialized")
+    
+    parts = node_id.split(":")
+    
+    target_match = ""
+    if parts[0] == "file" and len(parts) >= 2:
+        path = ":".join(parts[1:])
+        target_match = f"{{path: '{path}'}}"
+    elif parts[0] in ["class", "func"] and len(parts) >= 3:
+        name = parts[-1]
+        file_path = ":".join(parts[1:-1])
+        target_match = f"{{name: '{name}', file_path: '{file_path}'}}"
+    elif parts[0] in ["table", "api"] and len(parts) >= 2:
+        name = parts[-1]
+        target_match = f"{{name: '{name}'}}"
+    else:
+        raise HTTPException(status_code=400, detail="Invalid node_id format")
+
+    nodes_map = {}
+    edges = []
+    
+    try:
+        with driver.session() as session:
+            # First add the target node itself
+            res_target = session.run(f"MATCH (n {target_match}) RETURN n LIMIT 1")
+            for record in res_target:
+                n = record["n"]
+                n_id = make_node_id(n)
+                n_label = list(n.labels)[0] if n.labels else "Unknown"
+                nodes_map[n_id] = {
+                    "id": n_id,
+                    "label": get_node_label(n),
+                    "group": n_label,
+                    "title": f"Type: {n_label}<br>Signature: {n.get('signature', 'N/A')}<br>Summary: {n.get('summary', 'N/A')}"
+                }
+            
+            if not nodes_map:
+                raise HTTPException(status_code=404, detail="Target node not found")
+                
+            # Then find dependents (up to 3 levels deep)
+            query = f"""
+            MATCH path=(dependent)-[*1..3]->(target {target_match})
+            UNWIND relationships(path) as r
+            RETURN startNode(r) as n, r, endNode(r) as m
+            """
+            result = session.run(query)
+            
+            for record in result:
+                n = record["n"]
+                r = record["r"]
+                m = record["m"]
+                
+                if n.get("file_path") == "external" or (m is not None and m.get("file_path") == "external"):
+                    continue
+                
+                n_id = make_node_id(n)
+                n_label = list(n.labels)[0] if n.labels else "Unknown"
+                if n_id not in nodes_map:
+                    nodes_map[n_id] = {
+                        "id": n_id,
+                        "label": get_node_label(n),
+                        "group": n_label,
+                        "title": f"Type: {n_label}<br>Signature: {n.get('signature', 'N/A')}<br>Summary: {n.get('summary', 'N/A')}"
+                    }
+                
+                if m is not None and r is not None:
+                    m_id = make_node_id(m)
+                    m_label = list(m.labels)[0] if m.labels else "Unknown"
+                    if m_id not in nodes_map:
+                        nodes_map[m_id] = {
+                            "id": m_id,
+                            "label": get_node_label(m),
+                            "group": m_label,
+                            "title": f"Type: {m_label}<br>Signature: {m.get('signature', 'N/A')}<br>Summary: {m.get('summary', 'N/A')}"
+                        }
+                    
+                    edge_id = f"{n_id}->{r.type}->{m_id}"
+                    if not any(e["id"] == edge_id for e in edges):
+                        edges.append({
+                            "id": edge_id,
+                            "source": n_id,
+                            "target": m_id,
+                            "from": n_id,
+                            "to": m_id,
+                            "label": r.type,
+                            "arrows": "to"
+                        })
+                        
+        return {"nodes": list(nodes_map.values()), "edges": edges}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 # ----------------- Graph RAG Engine -----------------
 def retrieve_graph_context(query_str: str) -> str:
     if not driver:

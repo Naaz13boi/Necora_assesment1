@@ -5,7 +5,7 @@ def login_user(user_id, username, password):
     """Logs in a user, saves details to database, and publishes a slack alert."""
     print(f"[Auth] Attempting login for {username}")
     
-    # Save the login session in the database
+    # Save the login session in the databaseas
     database.save_user(user_id, username)
     
     # Notify Slack about security access event

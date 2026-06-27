@@ -12,4 +12,4 @@ def save_user(user_id, username):
     conn.commit()
     conn.close()
     print(f"[DB] User {username} saved.")
-#qwefefyjfgh
+#qwefefyjfghada

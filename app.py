@@ -88,6 +88,10 @@ async def get_graph():
                 r = record["r"]
                 m = record["m"]
                 
+                # Filter out external placeholder functions to clean up the graph
+                if n.get("file_path") == "external" or (m is not None and m.get("file_path") == "external"):
+                    continue
+                
                 n_id = make_node_id(n)
                 n_label = list(n.labels)[0] if n.labels else "Unknown"
                 if n_id not in nodes_map:
@@ -98,7 +102,7 @@ async def get_graph():
                         "title": f"Type: {n_label}<br>Signature: {n.get('signature', 'N/A')}<br>Summary: {n.get('summary', 'N/A')}"
                     }
                 
-                if m and r:
+                if m is not None and r is not None:
                     m_id = make_node_id(m)
                     m_label = list(m.labels)[0] if m.labels else "Unknown"
                     if m_id not in nodes_map:

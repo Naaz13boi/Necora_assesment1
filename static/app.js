@@ -37,7 +37,7 @@ function initGraph() {
         },
         edges: {
             color: {
-                color: 'rgba(255, 255, 255, 0.2)',
+                color: 'rgba(255, 255, 255, 0.7)',
                 highlight: '#6366f1',
                 hover: '#06b6d4'
             },
@@ -54,7 +54,7 @@ function initGraph() {
             },
             smooth: {
                 enabled: true,
-                type: 'dynamic',
+                type: 'continuous',
                 roundness: 0.5
             }
         },
@@ -236,7 +236,7 @@ function handleKeyPress(e) {
 // Append message bubble to UI
 function appendMessage(sender, text) {
     const chatMessages = document.getElementById("chat-messages");
-    const msgId = "msg-" + Date.now();
+    const msgId = "msg-" + Date.now() + "-" + Math.floor(Math.random() * 1000000);
 
     const msgDiv = document.createElement("div");
     msgDiv.className = `message ${sender}`;

@@ -5,7 +5,7 @@ import requests
 from decimal import Decimal, ROUND_HALF_UP
 import database
 
-# Configure logging for production auditing
+# Configure logging for production auditingsda
 logger = logging.getLogger("payment_processor")
 
 # Securely load API keys from environment variables

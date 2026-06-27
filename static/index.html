@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Necora Code Graph RAG Dashboard</title>
+    <!-- Fonts & Icons -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Vis.js for Network Graph -->
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <!-- Marked.js for rendering markdown responses -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    
+    <style>
+        :root {
+            --bg-color: #0b0f19;
+            --card-bg: rgba(17, 24, 39, 0.7);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --accent-glow: rgba(99, 102, 241, 0.15);
+            --text-primary: #f3f4f6;
+            --text-secondary: #9ca3af;
+            --accent: #6366f1;
+            --accent-hover: #4f46e5;
+            
+            /* Node type colors */
+            --color-file: #06b6d4;
+            --color-class: #d946ef;
+            --color-func: #10b981;
+            --color-table: #f59e0b;
+            --color-api: #f43f5e;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Outfit', sans-serif;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.1) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(6, 182, 212, 0.08) 0px, transparent 50%);
+        }
+
+        /* Header Styling */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 2rem;
+            background: rgba(11, 15, 25, 0.8);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border-color);
+            z-index: 10;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #6366f1 0%, #06b6d4 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .logo i {
+            background: linear-gradient(135deg, #6366f1 0%, #06b6d4 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .status-indicators {
+            display: flex;
+            gap: 1.5rem;
+        }
+
+        .status-pill {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--border-color);
+            padding: 0.4rem 0.8rem;
+            border-radius: 9999px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        .status-pill.active {
+            color: var(--text-primary);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #6b7280;
+        }
+
+        .status-dot.green {
+            background-color: #10b981;
+            box-shadow: 0 0 8px #10b981;
+        }
+        
+        .status-dot.blue {
+            background-color: #06b6d4;
+            box-shadow: 0 0 8px #06b6d4;
+        }
+
+        /* Dashboard Layout */
+        .dashboard-container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* Left Side: Graph Area */
+        .graph-panel {
+            flex: 1;
+            position: relative;
+            height: 100%;
+            background: rgba(5, 5, 10, 0.4);
+        }
+
+        #network-graph {
+            width: 100%;
+            height: 100%;
+        }
+
+        .graph-controls {
+            position: absolute;
+            bottom: 1.5rem;
+            left: 1.5rem;
+            display: flex;
+            gap: 0.75rem;
+            z-index: 5;
+        }
+
+        .btn-ctrl {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 0.75rem;
+            border-radius: 12px;
+            cursor: pointer;
+            backdrop-filter: blur(16px);
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        .btn-ctrl:hover {
+            background: var(--accent);
+            border-color: var(--accent);
+            transform: translateY(-2px);
+        }
+
+        .legend {
+            position: absolute;
+            top: 1.5rem;
+            left: 1.5rem;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            backdrop-filter: blur(16px);
+            padding: 1rem;
+            border-radius: 16px;
+            z-index: 5;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+        }
+
+        .legend-title {
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-secondary);
+            margin-bottom: 0.25rem;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.9rem;
+        }
+
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 4px;
+        }
+
+        /* Right Side: RAG Sidebar */
+        .sidebar {
+            width: 480px;
+            border-left: 1px solid var(--border-color);
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            z-index: 5;
+            box-shadow: -10px 0 30px -15px rgba(0, 0, 0, 0.5);
+        }
+
+        /* Chat Window styling */
+        .chat-header {
+            padding: 1.25rem;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .chat-header h3 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .chat-header h3 i {
+            color: var(--accent);
+        }
+
+        .chat-messages {
+            flex: 1;
+            padding: 1.5rem;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 1.25rem;
+        }
+
+        .message {
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+            max-width: 85%;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .message.user {
+            align-self: flex-end;
+        }
+
+        .message.assistant {
+            align-self: flex-start;
+        }
+
+        .message-bubble {
+            padding: 0.85rem 1.1rem;
+            border-radius: 18px;
+            font-size: 0.95rem;
+            line-height: 1.5;
+            word-wrap: break-word;
+        }
+
+        .message.user .message-bubble {
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%);
+            color: white;
+            border-bottom-right-radius: 4px;
+        }
+
+        .message.assistant .message-bubble {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            border-bottom-left-radius: 4px;
+        }
+
+        .message.assistant .message-bubble pre {
+            background: rgba(0, 0, 0, 0.4);
+            padding: 0.75rem;
+            border-radius: 8px;
+            margin: 0.5rem 0;
+            overflow-x: auto;
+            border: 1px solid var(--border-color);
+        }
+
+        .message.assistant .message-bubble code {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            background: rgba(255, 255, 255, 0.08);
+            padding: 0.15rem 0.3rem;
+            border-radius: 4px;
+        }
+
+        .message.assistant .message-bubble p {
+            margin-bottom: 0.5rem;
+        }
+        .message.assistant .message-bubble p:last-child {
+            margin-bottom: 0;
+        }
+
+        .message-sender {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        .message.user .message-sender {
+            text-align: right;
+        }
+
+        /* Chat Input */
+        .chat-input-area {
+            padding: 1.25rem;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            gap: 0.75rem;
+            background: rgba(11, 15, 25, 0.4);
+        }
+
+        .chat-input {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 0.85rem 1.1rem;
+            border-radius: 14px;
+            font-size: 0.95rem;
+            outline: none;
+            transition: all 0.2s ease;
+        }
+
+        .chat-input:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px var(--accent-glow);
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        .btn-send {
+            background: var(--accent);
+            color: white;
+            border: none;
+            width: 48px;
+            border-radius: 14px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .btn-send:hover {
+            background: var(--accent-hover);
+            transform: translateY(-1px);
+        }
+
+        /* Animation */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 9999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.25);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header -->
+    <header>
+        <div class="logo">
+            <i class="fa-solid fa-diagram-project"></i>
+            <span>Necora Graph RAG</span>
+        </div>
+        <div class="status-indicators">
+            <div class="status-pill active" title="Kafka is healthy">
+                <div class="status-dot green"></div>
+                <span>Kafka</span>
+            </div>
+            <div class="status-pill active" title="Memgraph DB is connected">
+                <div class="status-dot green"></div>
+                <span>Memgraph</span>
+            </div>
+            <div class="status-pill active" title="Llama.cpp local server">
+                <div class="status-dot blue"></div>
+                <span>Llama.cpp</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <div class="dashboard-container">
+        
+        <!-- Left Side: Interactive Network Map -->
+        <div class="graph-panel">
+            <!-- Node Category Legend -->
+            <div class="legend">
+                <div class="legend-title">Graph Nodes</div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color: var(--color-file);"></div>
+                    <span>File (.py)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color: var(--color-class);"></div>
+                    <span>Class</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color: var(--color-func);"></div>
+                    <span>Function</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color: var(--color-table);"></div>
+                    <span>Database Table</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color: var(--color-api);"></div>
+                    <span>External API</span>
+                </div>
+            </div>
+
+            <!-- Graph Canvas -->
+            <div id="network-graph"></div>
+
+            <!-- Controls overlay -->
+            <div class="graph-controls">
+                <button class="btn-ctrl" onclick="reloadGraph()" title="Reload Graph Data">
+                    <i class="fa-solid fa-arrows-rotate"></i>
+                </button>
+                <button class="btn-ctrl" onclick="stabilizeGraph()" title="Re-arrange Physics Layout">
+                    <i class="fa-solid fa-compress"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Right Side: Chat / Graph RAG Drawer -->
+        <div class="sidebar">
+            <div class="chat-header">
+                <h3><i class="fa-solid fa-brain"></i> Graph RAG Explorer</h3>
+                <span style="font-size: 0.8rem; color: var(--text-secondary);">Local LLM Context</span>
+            </div>
+
+            <div class="chat-messages" id="chat-messages">
+                <div class="message assistant">
+                    <span class="message-sender">Graph RAG AI</span>
+                    <div class="message-bubble">
+                        Hello! I am connected to your codebase dependency graph. Make changes to your code in `target_code/` or ask me questions about classes, callers, dependencies, or database connections. E.g.:
+                        <br><br>
+                        <em>"Which functions call external API endpoints?"</em> or 
+                        <br><em>"If I modify table X, what codebase files are affected?"</em>
+                    </div>
+                </div>
+            </div>
+
+            <div class="chat-input-area">
+                <input type="text" class="chat-input" id="chat-input" placeholder="Ask about code relationships..." onkeydown="handleKeyPress(event)">
+                <button class="btn-send" onclick="sendMessage()">
+                    <i class="fa-solid fa-paper-plane"></i>
+                </button>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- UI Logic Script -->
+    <script src="/app.js"></script>
+</body>
+</html>
